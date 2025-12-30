@@ -19,20 +19,21 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Build & publish
+      - name: Build & publish artifact
         run: |
          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
 
+         mkdir build
          node scripts/hello.js
-         mv hello.txt hello-${SHORT_SHA}.txt
+         mv hello.txt build/hello-${SHORT_SHA}.txt
 
          git config user.name "github-actions"
          git config user.email "github-actions@github.com"
 
          git checkout --orphan dist
          git rm -rf .
-         mv hello-${SHORT_SHA}.txt .
 
+         cp -r build/* .
          git add .
          git commit -m "artifact: hello-${SHORT_SHA}.txt"
          git push -f origin dist
