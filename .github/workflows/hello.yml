@@ -1,43 +1,75 @@
-name: Hello World Action
+name: Multi-platform Release
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:   # 允许手动触发
+    branches: [ main ]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  hello-job:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+
+          - os: windows-latest
+            platform: windows
+            arch: x64
+
+          - os: macos-latest
+            platform: macos
+            arch: arm64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Build artifact
+        shell: bash
+        run: |
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+          VERSION=v1.0.${{ github.run_number }}
+
+          node scripts/hello.js
+
+          ARTIFACT=hello-${{ matrix.platform }}-${{ matrix.arch }}-${SHORT_SHA}.txt
+          mv hello.txt $ARTIFACT
+
+          echo "ARTIFACT=$ARTIFACT" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      # ⬇️ 每个平台先上传为 artifact
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ env.ARTIFACT }}
+
+  release:
+    needs: build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      # ⬇️ 下载所有平台的产物
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
         with:
-          node-version: '18'
+          path: dist
 
-      - name: Build & publish artifact
-        run: |
-         SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
-
-         mkdir build
-         node scripts/hello.js
-         mv hello.txt build/hello-${SHORT_SHA}.txt
-
-         git config user.name "github-actions"
-         git config user.email "github-actions@github.com"
-
-         git checkout --orphan dist
-         git rm -rf .
-
-         cp -r build/* .
-         rm -rf build
-         git add .
-         git commit -m "artifact: hello-${SHORT_SHA}.txt"
-         git push -f origin dist
+      # ⬇️ 创建 Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Release v1.0.${{ github.run_number }}
+          files: dist/**/*
